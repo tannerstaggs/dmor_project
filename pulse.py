@@ -5,7 +5,7 @@ HUB = 0
 MAX_CAPACITY = 20000
 NODES = [i for i in range(0, 41)]
 
-initial_loads = [20000, 15000, 10000]
+initial_loads = [20000, 17500, 15000, 12500, 10000, 7500, 5000, 2500, 0]
 nodes_with_eligible_load = [1, 6, 8]
 #level_one_nodes = [1, 6, 8, 11, 12, 14, 16, 17, 20, 26, 27]
 
