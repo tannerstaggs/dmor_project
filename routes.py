@@ -43,7 +43,7 @@ for idx, row in nodes.iterrows():
             edges["SourceEndWindow"].append(row["EndWindow"])
             edges["DestStartWindow"].append(r["StartWindow"])
             edges["DestEndWindow"].append(r["EndWindow"])
-            edges["ServiceTime"].append(r["service-time (min)"])
+            edges["ServiceTime"].append(int(r["service-time (min)"]))
             if r["Pickup (P) /Delivery (D)"] == "D":
                 edges["LoadChange"].append(r["demand (pounds)"] * -1)
             else:
