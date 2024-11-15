@@ -5,7 +5,7 @@ HUB = 0
 MAX_CAPACITY = 20000
 NODES = [i for i in range(0, 41)]
 
-initial_loads = [20000, 17500, 15000, 12500, 10000, 7500, 5000, 2500, 0]
+initial_loads = [20000, 15000, 10000, 5000, 0]
 nodes_with_eligible_load = [1, 6, 8]
 #level_one_nodes = [1, 6, 8, 11, 12, 14, 16, 17, 20, 26, 27]
 
@@ -26,7 +26,7 @@ def pulse(node_id, eligible_load, load, distance, current_time, init_load, path:
         # Find all the possible edges we could take
         possible_routes = get_routes(node_id, edges)
 
-        if len(path) == 0 and eligible_load < MAX_CAPACITY:
+        if len(path) == 0 and eligible_load < 10001:
             possible_routes = possible_routes.loc[possible_routes["LoadChange"] > 0]
 
         for idx, row in possible_routes.iterrows():
@@ -41,10 +41,11 @@ def pulse(node_id, eligible_load, load, distance, current_time, init_load, path:
                 service_time = row["ServiceTime"]
                 is_pickup = True if load_change > 0 else False
                 arrival_time = current_time + edge_len
-                demand = abs(row["LoadChange"]) if is_pickup else 0
+                demand = abs(row["LoadChange"]) if not is_pickup else 0
+                supply = row["LoadChange"] if is_pickup else 0
                 if not prune_by_time(arrival_time, start_window, end_window, service_time):
                     if not prune_by_drop_off(eligible_load, demand):
-                        if not prune_by_capacity((MAX_CAPACITY - load), demand):
+                        if not prune_by_capacity((MAX_CAPACITY - load), supply):
                             _el = update_eligible_load(eligible_load, load_change, is_pickup, to_node)
                             _load = update_load(load, load_change)
                             _dist = update_distance(distance, edge_len)
@@ -114,12 +115,14 @@ def get_routes(node_id, edges):
         to_nodes = [31]
     elif node_id == 31:
         to_nodes = [34]
+    elif node_id == 7:
+        to_nodes = [4]
     if len(to_nodes) > 0:
         return edges.loc[(edges["From"] == node_id) & (edges["To"].isin(to_nodes))]
     else:
         return edges.loc[edges["From"] == node_id]
 
-    
+
 
 if __name__ == "__main__":
     for i in initial_loads:
@@ -127,6 +130,11 @@ if __name__ == "__main__":
 
     feasible_solutions.to_csv("feasible_routes.csv")
 
+    # Create a binary parameter from feasible_solutions["Route"]
+    def is_node_in_route_initialize(model, r, n):
+        route_nodes = map(int, feasible_solutions.loc[r, "Route"])  # Nodes in route
+        return 1 if n in route_nodes else 0
+    
     # Initialize the model
     model = ConcreteModel()
 
@@ -136,22 +144,24 @@ if __name__ == "__main__":
     # Parameters for each route
     model.routes = Set(initialize=feasible_solutions.index)
     model.nodes = Set(initialize=sorted(list(nodes)))
-    model.route_nodes = Param(model.routes, initialize=lambda m, r: feasible_solutions.loc[r, "Route"], within=Any)
     model.distance = Param(model.routes, initialize=lambda m, r: float(feasible_solutions.loc[r, "Distance"]))
     model.cost = Param(model.routes, initialize=lambda m, r: float(feasible_solutions.loc[r, "Cost"]))
     model.initial_load = Param(model.routes, initialize=lambda m, r: float(feasible_solutions.loc[r, "InitialLoad"]))
+
+    # Binary parameter: 1 if node `n` is in route `r`, 0 otherwise
+    model.is_node_in_route = Param(model.routes, model.nodes, initialize=is_node_in_route_initialize, within=Binary)
 
     # Decision variable: 1 if route r is selected, 0 otherwise
     model.x = Var(model.routes, within=Binary)
 
     # Objective: Minimize total cost of the selected routes
-    model.obj = Objective(expr=sum(model.cost[r] * model.x[r] for r in model.routes) 
+    model.obj = Objective(expr=sum((model.cost[r] * model.x[r]) for r in model.routes) 
                           + 300 * sum(model.x[r] for r in model.routes),
                       sense=minimize)
 
-    # Constraints to ensure each node in 1-40 is covered exactly once
+    # Constraint: Each node must be covered exactly once
     def node_coverage_rule(m, n):
-        return sum(m.x[r] for r in m.routes if n in m.route_nodes[r]) == 1
+        return sum(m.is_node_in_route[r, n] * m.x[r] for r in m.routes) == 1
 
     model.node_coverage = Constraint(model.nodes, rule=node_coverage_rule)
 
