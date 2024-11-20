@@ -1,18 +1,19 @@
 import pandas as pd
+import ast
 from pyomo.environ import *
 
 HUB = 0
 MAX_CAPACITY = 20000
 NODES = [i for i in range(0, 41)]
 
-initial_loads = [20000, 15000, 10000, 5000, 0]
-nodes_with_eligible_load = [1, 6, 8]
+initial_loads = [20000, 17500, 15000, 10000, 5000, 2500, 0]
+nodes_with_eligible_load = [1, 5, 6, 8]
 #level_one_nodes = [1, 6, 8, 11, 12, 14, 16, 17, 20, 26, 27]
 
 feasible_solutions = pd.DataFrame({"Route": [], "Distance": [], "Cost": [], "InitialLoad": []})
 feasible_solutions.Route = feasible_solutions.Route.astype(object)
 
-edges = pd.read_csv("edges.csv")
+edges = pd.read_csv("edges_split.csv")
 
 
 def pulse(node_id, eligible_load, load, distance, current_time, init_load, path:list):
@@ -23,15 +24,18 @@ def pulse(node_id, eligible_load, load, distance, current_time, init_load, path:
     if node_id == 0 and len(path) > 0:
         feasible_solutions.loc[len(feasible_solutions)] = [_path, distance, 5*distance, init_load]
     else:
+        # if node_id != 0 and node_id in path:
+        #     print("Prune by cycle")
+        #     return
         # Find all the possible edges we could take
         possible_routes = get_routes(node_id, edges)
 
-        if len(path) == 0 and eligible_load < 10001:
-            possible_routes = possible_routes.loc[possible_routes["LoadChange"] > 0]
+        # if len(path) == 0 and eligible_load < 10001:
+        #     possible_routes = possible_routes.loc[possible_routes["LoadChange"] > 0]
 
         for idx, row in possible_routes.iterrows():
             load_change = row["LoadChange"]
-            to_node = int(row["To"])
+            to_node = float(row["To"])
             edge_len = row["Dist"]
             if to_node == 0:
                 pulse(to_node, eligible_load, load, (distance + edge_len), (current_time + edge_len), init_load, _path)
@@ -104,6 +108,8 @@ def update_distance(distance, edge_len):
 def get_routes(node_id, edges):
     to_nodes = []
     if node_id == 1:
+        to_nodes = [27]
+    elif node_id == 27:
         to_nodes = [36]
     elif node_id == 36:
         to_nodes = [13]
@@ -130,16 +136,20 @@ if __name__ == "__main__":
 
     feasible_solutions.to_csv("feasible_routes.csv")
 
+    feasible_solutions = pd.read_csv("feasible_routes.csv")
+
     # Create a binary parameter from feasible_solutions["Route"]
     def is_node_in_route_initialize(model, r, n):
-        route_nodes = map(int, feasible_solutions.loc[r, "Route"])  # Nodes in route
-        return 1 if n in route_nodes else 0
+        route_nodes = ast.literal_eval(feasible_solutions.loc[r, "Route"])
+        return 1 if float(n) in route_nodes else 0
     
     # Initialize the model
     model = ConcreteModel()
 
     # Data
-    nodes = set(range(1, 41))  # Nodes we need to cover
+    # nodes = set(range(1, 41))  # Nodes we need to cover
+    nodes = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21.1, 21.2, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40.1, 40.2]
+
 
     # Parameters for each route
     model.routes = Set(initialize=feasible_solutions.index)
@@ -152,7 +162,7 @@ if __name__ == "__main__":
     model.is_node_in_route = Param(model.routes, model.nodes, initialize=is_node_in_route_initialize, within=Binary)
 
     # Decision variable: 1 if route r is selected, 0 otherwise
-    model.x = Var(model.routes, within=Binary)
+    model.x = Var(model.routes, within=Binary, initialize=0)
 
     # Objective: Minimize total cost of the selected routes
     model.obj = Objective(expr=sum((model.cost[r] * model.x[r]) for r in model.routes) 
@@ -161,7 +171,7 @@ if __name__ == "__main__":
 
     # Constraint: Each node must be covered exactly once
     def node_coverage_rule(m, n):
-        return sum(m.is_node_in_route[r, n] * m.x[r] for r in m.routes) == 1
+        return sum(m.is_node_in_route[r, n] * m.x[r] for r in m.routes) >= 1
 
     model.node_coverage = Constraint(model.nodes, rule=node_coverage_rule)
 
@@ -173,3 +183,11 @@ if __name__ == "__main__":
     selected_routes = [r for r in model.routes if model.x[r].value == 1]
     print("Selected routes:", selected_routes)
     print("Minimum cost:", model.obj())
+
+    uncovered_nodes = []
+    for n in model.nodes:
+        covered = any(model.is_node_in_route[r, n] == 1 for r in model.routes)
+        if not covered:
+            uncovered_nodes.append(n)
+
+    print("Uncovered nodes:", uncovered_nodes)

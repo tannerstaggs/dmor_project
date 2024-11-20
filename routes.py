@@ -5,7 +5,7 @@ required_sequences = [
     [5, 16, 22],
     [8, 31, 34]
 ]
-df = pd.read_excel("Data_2024.xlsx", converters={"time-window(start; h:m)": str})
+df = pd.read_excel("Data_2024_SplitNodes.xlsx", converters={"time-window(start; h:m)": str})
 # First, let's convert the hours minutes format to minutes
 def convert_to_minutes(val:str):
     vals = val.split(":")
@@ -33,8 +33,8 @@ edges = {"From": [],
 for idx, row in nodes.iterrows():
     for i, r in nodes.iterrows():
         if i != idx:
-            edges["From"].append(int(row["Order No."]))
-            edges["To"].append(int(r["Order No."]))
+            edges["From"].append(float(row["Order No."]))
+            edges["To"].append(float(r["Order No."]))
             x = np.array([row["X"], row["Y"]])
             y = np.array([r["X"], r["Y"]])
             dist = np.linalg.norm(x-y)
@@ -53,4 +53,4 @@ distances = pd.DataFrame(edges).sort_values(by="From")
 distances = distances.reset_index(drop=True)
 print(distances.head(40))
 print(len(distances))
-distances.to_csv("edges.csv")
+distances.to_csv("edges_split.csv")
