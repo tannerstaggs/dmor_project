@@ -6,9 +6,14 @@ HUB = 0
 MAX_CAPACITY = 20000
 NODES = [i for i in range(0, 41)]
 
-initial_loads = [20000, 17500, 15000, 10000, 5000, 2500, 0]
+initial_loads = [20000, 19000, 18000, 17500, 16000, 15000, 12500, 11000, 10250, 7500, 5000, 750, 0]
 nodes_with_eligible_load = [1, 5, 6, 8]
 #level_one_nodes = [1, 6, 8, 11, 12, 14, 16, 17, 20, 26, 27]
+# must_be_together_groups = [
+#     {1.0, 13.0, 36.0},
+#     {5.0, 6.0, 22.0},
+#     {8.0, 31.0, 34.0}
+# ]
 
 feasible_solutions = pd.DataFrame({"Route": [], "Distance": [], "Cost": [], "InitialLoad": []})
 feasible_solutions.Route = feasible_solutions.Route.astype(object)
@@ -30,8 +35,8 @@ def pulse(node_id, eligible_load, load, distance, current_time, init_load, path:
         # Find all the possible edges we could take
         possible_routes = get_routes(node_id, edges)
 
-        # if len(path) == 0 and eligible_load < 10001:
-        #     possible_routes = possible_routes.loc[possible_routes["LoadChange"] > 0]
+        if len(path) == 0 and eligible_load < 10001:
+            possible_routes = possible_routes.loc[possible_routes["LoadChange"] > 0]
 
         for idx, row in possible_routes.iterrows():
             load_change = row["LoadChange"]
@@ -109,24 +114,32 @@ def get_routes(node_id, edges):
     to_nodes = []
     if node_id == 1:
         to_nodes = [27]
+    elif node_id == 17:
+        to_nodes = [37]
+    elif node_id == 37:
+        to_nodes = [1]
     elif node_id == 27:
         to_nodes = [36]
     elif node_id == 36:
-        to_nodes = [13]
+        to_nodes = [13, 7]
+    elif node_id == 26:
+        to_nodes = [6]
     elif node_id == 6:
         to_nodes = [5]
     elif node_id == 5:
         to_nodes = [22]
     elif node_id == 8:
+        to_nodes = [18]
+    elif node_id == 18:
         to_nodes = [31]
     elif node_id == 31:
         to_nodes = [34]
     elif node_id == 7:
-        to_nodes = [4]
+        to_nodes = [13]
     if len(to_nodes) > 0:
         return edges.loc[(edges["From"] == node_id) & (edges["To"].isin(to_nodes))]
     else:
-        return edges.loc[edges["From"] == node_id]
+        return edges.loc[(edges["From"] == node_id)]
 
 
 
@@ -143,12 +156,13 @@ if __name__ == "__main__":
         route_nodes = ast.literal_eval(feasible_solutions.loc[r, "Route"])
         return 1 if float(n) in route_nodes else 0
     
+    
     # Initialize the model
     model = ConcreteModel()
 
     # Data
     # nodes = set(range(1, 41))  # Nodes we need to cover
-    nodes = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21.1, 21.2, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40.1, 40.2]
+    nodes = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40.1, 40.2]
 
 
     # Parameters for each route
@@ -171,9 +185,20 @@ if __name__ == "__main__":
 
     # Constraint: Each node must be covered exactly once
     def node_coverage_rule(m, n):
-        return sum(m.is_node_in_route[r, n] * m.x[r] for r in m.routes) >= 1
+        return sum(m.is_node_in_route[r, n] * m.x[r] for r in m.routes) == 1
 
     model.node_coverage = Constraint(model.nodes, rule=node_coverage_rule)
+
+    # # Add constraints for nodes that must appear together
+    # def must_be_together_rule(m, r, group):
+    #     return sum(m.is_node_in_route[r, n] for n in group) == len(group) * m.x[r]
+    # # Add constraints for each group
+    # for group in must_be_together_groups:
+    #     group_name = "_".join(str(n) for n in group)
+    #     model.add_component(
+    #         f"must_be_together_{group_name}",
+    #         Constraint(model.routes, rule=lambda m, r, g=group: must_be_together_rule(m, r, g))
+    #     )
 
     # Solve the model
     solver = SolverFactory('gurobi')  # or any other solver you have
